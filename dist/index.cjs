@@ -1,0 +1,840 @@
+'use strict';
+
+var react = require('react');
+var jsxRuntime = require('react/jsx-runtime');
+
+// src/components/ScrollSequence.tsx
+
+// src/core/FrameRenderer.ts
+var DEFAULT_OPTIONS = {
+  scaleMode: "fill",
+  horizontalAlignment: "center",
+  verticalAlignment: "center"
+};
+var FrameRenderer = class {
+  constructor(canvas) {
+    this.lastDrawnImage = null;
+    this.lastWidth = 0;
+    this.lastHeight = 0;
+    this.lastOptions = DEFAULT_OPTIONS;
+    this.canvas = canvas;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) throw new Error("Failed to get 2d canvas context");
+    this.ctx = ctx;
+  }
+  resize(width, height) {
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const canvasWidth = Math.round(width * dpr);
+    const canvasHeight = Math.round(height * dpr);
+    if (this.canvas.width !== canvasWidth || this.canvas.height !== canvasHeight) {
+      this.canvas.width = canvasWidth;
+      this.canvas.height = canvasHeight;
+      this.canvas.style.width = `${width}px`;
+      this.canvas.style.height = `${height}px`;
+      this.ctx.scale(dpr, dpr);
+      this.lastDrawnImage = null;
+    }
+  }
+  drawFrame(image, options) {
+    if (!image) return;
+    const opts = { ...DEFAULT_OPTIONS, ...options };
+    if (image === this.lastDrawnImage && this.canvas.width === this.lastWidth && this.canvas.height === this.lastHeight && opts.scaleMode === this.lastOptions.scaleMode && opts.horizontalAlignment === this.lastOptions.horizontalAlignment && opts.verticalAlignment === this.lastOptions.verticalAlignment) {
+      return;
+    }
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const displayWidth = this.canvas.width / dpr;
+    const displayHeight = this.canvas.height / dpr;
+    this.ctx.clearRect(0, 0, displayWidth, displayHeight);
+    const imgAspect = image.naturalWidth / image.naturalHeight;
+    const canvasAspect = displayWidth / displayHeight;
+    let drawWidth;
+    let drawHeight;
+    if (opts.scaleMode === "fill") {
+      if (canvasAspect > imgAspect) {
+        drawWidth = displayWidth;
+        drawHeight = displayWidth / imgAspect;
+      } else {
+        drawHeight = displayHeight;
+        drawWidth = displayHeight * imgAspect;
+      }
+    } else {
+      if (canvasAspect > imgAspect) {
+        drawHeight = displayHeight;
+        drawWidth = displayHeight * imgAspect;
+      } else {
+        drawWidth = displayWidth;
+        drawHeight = displayWidth / imgAspect;
+      }
+    }
+    let x;
+    switch (opts.horizontalAlignment) {
+      case "left":
+        x = 0;
+        break;
+      case "right":
+        x = displayWidth - drawWidth;
+        break;
+      case "center":
+      default:
+        x = (displayWidth - drawWidth) / 2;
+    }
+    let y;
+    switch (opts.verticalAlignment) {
+      case "top":
+        y = 0;
+        break;
+      case "bottom":
+        y = displayHeight - drawHeight;
+        break;
+      case "center":
+      default:
+        y = (displayHeight - drawHeight) / 2;
+    }
+    this.ctx.drawImage(image, x, y, drawWidth, drawHeight);
+    this.lastDrawnImage = image;
+    this.lastWidth = this.canvas.width;
+    this.lastHeight = this.canvas.height;
+    this.lastOptions = opts;
+  }
+  clear() {
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    this.ctx.clearRect(0, 0, this.canvas.width / dpr, this.canvas.height / dpr);
+    this.lastDrawnImage = null;
+  }
+};
+
+// src/core/ImagePreloader.ts
+var MAX_CONCURRENT = 6;
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.decoding = "async";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Failed to load image: ${src}`));
+    img.src = src;
+  });
+}
+async function preloadImages(urls, onProgress) {
+  const total = urls.length;
+  if (total === 0) return [];
+  const results = new Array(total);
+  let loaded = 0;
+  let nextIndex = 0;
+  function reportProgress() {
+    onProgress?.({
+      loaded,
+      total,
+      percent: total > 0 ? loaded / total * 100 : 0
+    });
+  }
+  return new Promise((resolve, reject) => {
+    let hasRejected = false;
+    function processNext() {
+      if (hasRejected) return;
+      if (nextIndex >= total) {
+        if (loaded === total) resolve(results);
+        return;
+      }
+      const index = nextIndex++;
+      loadImage(urls[index]).then((img) => {
+        if (hasRejected) return;
+        results[index] = img;
+        loaded++;
+        reportProgress();
+        processNext();
+      }).catch((err) => {
+        if (hasRejected) return;
+        hasRejected = true;
+        reject(err);
+      });
+    }
+    const initialBatch = Math.min(MAX_CONCURRENT, total);
+    for (let i = 0; i < initialBatch; i++) {
+      processNext();
+    }
+  });
+}
+function generateImageUrls(pattern, count, startIndex = 0, padLength = 4) {
+  const urls = [];
+  for (let i = startIndex; i < startIndex + count; i++) {
+    const paddedIndex = String(i).padStart(padLength, "0");
+    urls.push(pattern.replace("{index}", paddedIndex));
+  }
+  return urls;
+}
+
+// src/core/math.ts
+var easings = {
+  linear: (t) => t,
+  easeIn: (t) => t * t,
+  easeOut: (t) => t * (2 - t),
+  easeInOut: (t) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
+};
+function resolveEasing(easing) {
+  if (typeof easing === "function") return easing;
+  return easings[easing ?? "linear"];
+}
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+function inverseLerp(a, b, value) {
+  if (a === b) return 0;
+  return clamp((value - a) / (b - a), 0, 1);
+}
+
+// src/core/ScrollEngine.ts
+var ScrollEngine = class {
+  constructor(config) {
+    this.scenes = [];
+    this.targetProgress = 0;
+    this.currentProgress = 0;
+    this.rafId = null;
+    this.isActive = false;
+    this.isReady = false;
+    this.observer = null;
+    this.resizeObserver = null;
+    this.lastTickTime = 0;
+    this.totalFrameCount = 0;
+    this.canvas = config.canvas;
+    this.container = config.container;
+    this.renderer = new FrameRenderer(this.canvas);
+    this.scrollDelay = config.scrollDelay ?? 0;
+    this.onProgress = config.onProgress;
+    this.preloadPercentage = config.preloadPercentage ?? 0;
+    this.scrollPadding = config.scrollPadding ?? 0;
+    this.reverseSpeedMultiplier = config.reverseSpeedMultiplier ?? 1;
+    this.stopDeceleration = clamp(config.stopDeceleration ?? 0.65, 0.01, 1);
+    this.overlapTop = config.overlapTop ?? 0;
+    this.handleScroll = this.handleScroll.bind(this);
+    this.tick = this.tick.bind(this);
+    this.handleResize = this.handleResize.bind(this);
+    this.initScenes(config.scenes, config.onPreloadProgress);
+  }
+  async initScenes(sceneConfigs, onPreloadProgress) {
+    const allUrls = [];
+    const sceneMeta = [];
+    for (const config of sceneConfigs) {
+      sceneMeta.push({
+        config,
+        startIdx: allUrls.length,
+        count: config.images.length
+      });
+      allUrls.push(...config.images);
+    }
+    this.totalFrameCount = allUrls.length;
+    let cumulativeProgress = 0;
+    const sceneStates = sceneMeta.map((meta) => {
+      const weight = (meta.config.duration ?? 1) * meta.count;
+      return {
+        config: meta.config,
+        images: [],
+        startProgress: 0,
+        endProgress: 0,
+        frameCount: meta.count,
+        _weight: weight
+      };
+    });
+    const totalWeight = sceneStates.reduce(
+      (sum, s) => sum + (s._weight || 1),
+      0
+    );
+    for (const scene of sceneStates) {
+      const w = scene._weight;
+      scene.startProgress = cumulativeProgress;
+      scene.endProgress = cumulativeProgress + w / totalWeight;
+      cumulativeProgress = scene.endProgress;
+    }
+    if (sceneStates.length > 0) {
+      sceneStates[sceneStates.length - 1].endProgress = 1;
+    }
+    this.scenes = sceneStates;
+    let loadedSoFar = 0;
+    const totalImages = allUrls.length;
+    const preloadThreshold = this.preloadPercentage / 100 * totalImages;
+    const allImages = await preloadImages(allUrls, (progress) => {
+      loadedSoFar = progress.loaded;
+      onPreloadProgress?.(progress.loaded, progress.total);
+      if (!this.isReady && loadedSoFar >= preloadThreshold) {
+        this.isReady = true;
+        this.start();
+      }
+    });
+    for (let i = 0; i < sceneMeta.length; i++) {
+      const meta = sceneMeta[i];
+      this.scenes[i].images = allImages.slice(
+        meta.startIdx,
+        meta.startIdx + meta.count
+      );
+    }
+    this.isReady = true;
+    this.start();
+    this.drawCurrentFrame();
+  }
+  start() {
+    if (this.isActive) return;
+    this.isActive = true;
+    this.observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            this.startAnimationLoop();
+          } else {
+            this.stopAnimationLoop();
+          }
+        }
+      },
+      { threshold: 0 }
+    );
+    this.observer.observe(this.container);
+    this.resizeObserver = new ResizeObserver(() => this.handleResize());
+    this.resizeObserver.observe(this.container);
+    window.addEventListener("scroll", this.handleScroll, { passive: true });
+    this.handleResize();
+    this.handleScroll();
+    this.currentProgress = this.targetProgress;
+  }
+  handleScroll() {
+    if (!this.isReady) return;
+    const rect = this.container.getBoundingClientRect();
+    const scrollableHeight = this.container.offsetHeight - window.innerHeight;
+    const frameScrollHeight = scrollableHeight - this.scrollPadding;
+    if (frameScrollHeight <= 0) {
+      this.targetProgress = 0;
+      return;
+    }
+    const rawProgress = clamp((-rect.top - this.overlapTop) / frameScrollHeight, 0, 1);
+    this.targetProgress = rawProgress;
+    if (this.scrollDelay === 0) {
+      this.currentProgress = this.targetProgress;
+    }
+    if (this.rafId === null) {
+      this.startAnimationLoop();
+    }
+  }
+  handleResize() {
+    const width = this.container.clientWidth;
+    const height = window.innerHeight;
+    this.renderer.resize(width, height);
+    this.drawCurrentFrame();
+  }
+  startAnimationLoop() {
+    if (this.rafId !== null) return;
+    this.lastTickTime = performance.now();
+    this.rafId = requestAnimationFrame(this.tick);
+  }
+  stopAnimationLoop() {
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    if (this.isReady) {
+      this.currentProgress = this.targetProgress;
+      this.drawCurrentFrame();
+    }
+  }
+  tick() {
+    this.rafId = null;
+    const now = performance.now();
+    const dt = Math.min((now - this.lastTickTime) / 1e3, 0.1);
+    this.lastTickTime = now;
+    if (this.scrollDelay > 0 && dt > 0) {
+      const diff = this.targetProgress - this.currentProgress;
+      const absDiff = Math.abs(diff);
+      if (absDiff > 1e-3) {
+        const isReverse = diff < 0;
+        const effectiveDelay = isReverse && this.reverseSpeedMultiplier > 1 ? this.scrollDelay / this.reverseSpeedMultiplier : this.scrollDelay;
+        const k = this.stopDeceleration * 5;
+        const factor = 1 - Math.exp(-k * dt / effectiveDelay);
+        this.currentProgress += diff * clamp(factor, 0.01, 0.95);
+        this.currentProgress = clamp(this.currentProgress, 0, 1);
+      } else {
+        this.currentProgress = this.targetProgress;
+      }
+    } else {
+      this.currentProgress = this.targetProgress;
+    }
+    this.drawCurrentFrame();
+    const needsCatchUp = this.scrollDelay > 0 && Math.abs(this.currentProgress - this.targetProgress) > 1e-3;
+    if (needsCatchUp) {
+      this.rafId = requestAnimationFrame(this.tick);
+    }
+  }
+  drawCurrentFrame() {
+    if (this.scenes.length === 0) return;
+    const { sceneIndex, frameIndex, sceneProgress } = this.resolveFrame(this.currentProgress);
+    const scene = this.scenes[sceneIndex];
+    if (!scene || scene.images.length === 0) return;
+    const image = scene.images[clamp(frameIndex, 0, scene.images.length - 1)];
+    this.renderer.drawFrame(image, {
+      scaleMode: scene.config.scaleMode ?? "fill",
+      horizontalAlignment: scene.config.horizontalAlignment ?? "center",
+      verticalAlignment: scene.config.verticalAlignment ?? "center"
+    });
+    this.onProgress?.(this.currentProgress, sceneIndex, sceneProgress);
+  }
+  resolveFrame(progress) {
+    const p = clamp(progress, 0, 1);
+    for (let i = 0; i < this.scenes.length; i++) {
+      const scene = this.scenes[i];
+      if (p >= scene.startProgress && p <= scene.endProgress) {
+        const sceneRange = scene.endProgress - scene.startProgress;
+        const sceneProgress = sceneRange > 0 ? (p - scene.startProgress) / sceneRange : 0;
+        const frameIndex = Math.round(sceneProgress * (scene.frameCount - 1));
+        return { sceneIndex: i, frameIndex, sceneProgress };
+      }
+    }
+    const lastIndex = this.scenes.length - 1;
+    return {
+      sceneIndex: lastIndex,
+      frameIndex: this.scenes[lastIndex].frameCount - 1,
+      sceneProgress: 1
+    };
+  }
+  getProgress() {
+    return this.currentProgress;
+  }
+  getScenes() {
+    return this.scenes;
+  }
+  destroy() {
+    this.isActive = false;
+    this.stopAnimationLoop();
+    window.removeEventListener("scroll", this.handleScroll);
+    this.observer?.disconnect();
+    this.resizeObserver?.disconnect();
+    this.renderer.clear();
+  }
+};
+var SequenceContext = react.createContext(null);
+function useSequenceContext() {
+  const ctx = react.useContext(SequenceContext);
+  if (!ctx) {
+    throw new Error("<Scene> must be used inside <ScrollSequence>");
+  }
+  return ctx;
+}
+var SceneProgressContext = react.createContext(null);
+function useSceneProgress() {
+  const ctx = react.useContext(SceneProgressContext);
+  if (!ctx) {
+    throw new Error(
+      "<Overlay> / <Animate> must be used inside a <Scene> within <ScrollSequence>"
+    );
+  }
+  return ctx;
+}
+function ScrollSequence({
+  children,
+  className,
+  style,
+  scrollDelay = 0,
+  position = "sticky",
+  preloadPercentage = 0,
+  waitForLoad = false,
+  renderLoader,
+  lazy = true,
+  scrollPerFrame = 10,
+  overlapTop = 0,
+  overlapBottom = 0,
+  reverseSpeedMultiplier = 2,
+  stopDeceleration = 0.65,
+  exitFadeLength = 0.135,
+  onProgress
+}) {
+  const containerRef = react.useRef(null);
+  const canvasRef = react.useRef(null);
+  const engineRef = react.useRef(null);
+  const scenesMapRef = react.useRef(/* @__PURE__ */ new Map());
+  const orderCounterRef = react.useRef(0);
+  const [preloadProgress, setPreloadProgress] = react.useState(0);
+  const [isReady, setIsReady] = react.useState(false);
+  const [isInView, setIsInView] = react.useState(!lazy);
+  const [mounted, setMounted] = react.useState(false);
+  const [progressState, setProgressState] = react.useState({
+    sceneIndex: 0,
+    sceneProgress: 0,
+    frameIndex: 0,
+    frameCount: 0,
+    globalProgress: 0
+  });
+  react.useEffect(() => {
+    setMounted(true);
+  }, []);
+  const onProgressRef = react.useRef(onProgress);
+  onProgressRef.current = onProgress;
+  const buildEngine = react.useCallback(() => {
+    if (!containerRef.current || !canvasRef.current) return;
+    engineRef.current?.destroy();
+    const scenes = Array.from(scenesMapRef.current.values()).sort((a, b) => a.order - b.order).map((s) => s.config);
+    if (scenes.length === 0) return;
+    scenes.reduce((sum, s) => sum + s.images.length, 0);
+    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+    const engine = new ScrollEngine({
+      canvas: canvasRef.current,
+      container: containerRef.current,
+      scenes,
+      scrollDelay,
+      preloadPercentage,
+      scrollPadding: vh,
+      reverseSpeedMultiplier,
+      stopDeceleration,
+      overlapTop,
+      onProgress: (progress, sceneIndex, sceneProgress) => {
+        const resolved = engine.resolveFrame(progress);
+        setProgressState({
+          sceneIndex,
+          sceneProgress,
+          frameIndex: resolved.frameIndex,
+          frameCount: scenes[sceneIndex]?.images.length ?? 0,
+          globalProgress: progress
+        });
+        onProgressRef.current?.(progress, sceneIndex, sceneProgress);
+      },
+      onPreloadProgress: (loaded, total) => {
+        setPreloadProgress(total > 0 ? loaded / total * 100 : 0);
+        if (loaded === total) setIsReady(true);
+      }
+    });
+    engineRef.current = engine;
+  }, [scrollDelay, preloadPercentage, reverseSpeedMultiplier, stopDeceleration]);
+  const [sceneVersion, setSceneVersion] = react.useState(0);
+  const sequenceCtx = react.useMemo(
+    () => ({
+      registerScene: (id, config) => {
+        const existing = scenesMapRef.current.get(id);
+        scenesMapRef.current.set(id, {
+          id,
+          config,
+          order: existing?.order ?? orderCounterRef.current++
+        });
+        setSceneVersion((v) => v + 1);
+      },
+      unregisterScene: (id) => {
+        scenesMapRef.current.delete(id);
+        setSceneVersion((v) => v + 1);
+      }
+    }),
+    []
+  );
+  react.useEffect(() => {
+    if (!lazy || isInView || !containerRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setIsInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [lazy, isInView]);
+  react.useEffect(() => {
+    if (!isInView) return;
+    buildEngine();
+    return () => {
+      engineRef.current?.destroy();
+      engineRef.current = null;
+    };
+  }, [isInView, buildEngine, sceneVersion]);
+  const totalHeight = react.useMemo(() => {
+    const scenes = Array.from(scenesMapRef.current.values());
+    const totalFrames = scenes.reduce(
+      (sum, s) => sum + s.config.images.length * (s.config.duration ?? 1),
+      0
+    );
+    const vh = mounted && typeof window !== "undefined" ? window.innerHeight : 800;
+    return totalFrames * scrollPerFrame + vh + vh;
+  }, [sceneVersion, scrollPerFrame, mounted]);
+  react.useEffect(() => {
+    if (!waitForLoad || isReady || !containerRef.current) return;
+    const container = containerRef.current;
+    const onScroll = () => {
+      const rect = container.getBoundingClientRect();
+      if (rect.top < 0) {
+        window.scrollTo(0, window.scrollY + rect.top);
+      }
+    };
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [waitForLoad, isReady]);
+  const exitProgress = progressState.globalProgress;
+  const exitOpacity = exitFadeLength > 0 && exitProgress > 1 - exitFadeLength ? Math.max(0.02, 1 - (exitProgress - (1 - exitFadeLength)) / exitFadeLength * 0.98) : 1;
+  const containerStyle = {
+    position: "relative",
+    height: `${totalHeight}px`,
+    ...overlapTop > 0 || overlapBottom > 0 ? { marginTop: -overlapTop, marginBottom: -overlapBottom } : {},
+    ...style
+  };
+  const stickyStyle = {
+    position: position === "static" ? "relative" : position,
+    top: position === "sticky" ? 0 : void 0,
+    width: "100%",
+    height: "100vh",
+    overflow: "hidden"
+  };
+  const canvasStyle = {
+    display: "block",
+    width: "100%",
+    height: "100%",
+    opacity: exitOpacity,
+    transition: exitOpacity < 1 ? void 0 : "opacity 0.1s"
+  };
+  return /* @__PURE__ */ jsxRuntime.jsx(SequenceContext.Provider, { value: sequenceCtx, children: /* @__PURE__ */ jsxRuntime.jsx("div", { ref: containerRef, className, style: containerStyle, children: /* @__PURE__ */ jsxRuntime.jsxs("div", { style: stickyStyle, children: [
+    /* @__PURE__ */ jsxRuntime.jsx("canvas", { ref: canvasRef, style: canvasStyle }),
+    waitForLoad && !isReady && /* @__PURE__ */ jsxRuntime.jsx(
+      "div",
+      {
+        style: {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "rgba(0,0,0,0.85)",
+          zIndex: 10
+        },
+        children: renderLoader ? renderLoader(preloadProgress) : /* @__PURE__ */ jsxRuntime.jsxs("div", { style: { textAlign: "center", color: "#fff", fontFamily: "system-ui, sans-serif" }, children: [
+          /* @__PURE__ */ jsxRuntime.jsx("div", { style: { fontSize: 18, marginBottom: 12 }, children: "Loading frames\u2026" }),
+          /* @__PURE__ */ jsxRuntime.jsx(
+            "div",
+            {
+              style: {
+                width: 200,
+                height: 4,
+                background: "rgba(255,255,255,0.2)",
+                borderRadius: 2,
+                overflow: "hidden"
+              },
+              children: /* @__PURE__ */ jsxRuntime.jsx(
+                "div",
+                {
+                  style: {
+                    width: `${preloadProgress}%`,
+                    height: "100%",
+                    background: "#fff",
+                    borderRadius: 2,
+                    transition: "width 0.2s"
+                  }
+                }
+              )
+            }
+          ),
+          /* @__PURE__ */ jsxRuntime.jsxs("div", { style: { fontSize: 13, marginTop: 8, opacity: 0.7 }, children: [
+            Math.round(preloadProgress),
+            "%"
+          ] })
+        ] })
+      }
+    ),
+    /* @__PURE__ */ jsxRuntime.jsx(SceneProgressContext.Provider, { value: progressState, children: /* @__PURE__ */ jsxRuntime.jsx(
+      "div",
+      {
+        style: {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          pointerEvents: "none",
+          opacity: exitOpacity
+        },
+        children
+      }
+    ) })
+  ] }) }) });
+}
+function Scene({
+  images,
+  duration = 1,
+  scaleMode = "fill",
+  horizontalAlignment = "center",
+  verticalAlignment = "center",
+  children
+}) {
+  const id = react.useId();
+  const { registerScene, unregisterScene } = useSequenceContext();
+  react.useEffect(() => {
+    registerScene(id, {
+      images,
+      duration,
+      scaleMode,
+      horizontalAlignment,
+      verticalAlignment
+    });
+    return () => {
+      unregisterScene(id);
+    };
+  }, [id, images, duration, scaleMode, horizontalAlignment, verticalAlignment, registerScene, unregisterScene]);
+  return /* @__PURE__ */ jsxRuntime.jsx(jsxRuntime.Fragment, { children });
+}
+function Overlay({ children, className, style }) {
+  const overlayStyle = {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    pointerEvents: "auto",
+    ...style
+  };
+  return /* @__PURE__ */ jsxRuntime.jsx("div", { className, style: overlayStyle, children });
+}
+function getAnimationStyles(type, t, distance) {
+  switch (type) {
+    case "fadeIn":
+      return {
+        opacity: t,
+        visibility: t > 0 ? "visible" : "hidden"
+      };
+    case "fadeOut":
+      return {
+        opacity: 1 - t,
+        visibility: t < 1 ? "visible" : "hidden"
+      };
+    case "moveUp":
+      return {
+        transform: `translateY(${(1 - t) * distance}px)`
+      };
+    case "moveDown":
+      return {
+        transform: `translateY(${-(1 - t) * distance}px)`
+      };
+    case "moveLeft":
+      return {
+        transform: `translateX(${(1 - t) * distance}px)`
+      };
+    case "moveRight":
+      return {
+        transform: `translateX(${-(1 - t) * distance}px)`
+      };
+    case "scaleUp": {
+      const scale = 0 + t * 1;
+      return {
+        transform: `scale(${scale})`
+      };
+    }
+    case "scaleDown": {
+      const scale = 1 - t * (1 - 0.5);
+      return {
+        transform: `scale(${scale})`
+      };
+    }
+    default:
+      return {};
+  }
+}
+function Animate({
+  children,
+  type,
+  start,
+  end,
+  distance = 100,
+  easing = "linear",
+  className,
+  style
+}) {
+  const { frameIndex, frameCount } = useSceneProgress();
+  const easingFn = react.useMemo(() => resolveEasing(easing), [easing]);
+  const rawT = inverseLerp(start, end, frameIndex);
+  const t = easingFn(rawT);
+  const isVisible = frameIndex >= start && frameIndex <= end;
+  const shouldRender = type === "fadeIn" ? frameIndex >= start : type === "fadeOut" ? frameIndex <= end : isVisible;
+  const animStyles = getAnimationStyles(type, t, distance);
+  const combinedStyle = {
+    willChange: "transform, opacity",
+    ...style,
+    ...animStyles,
+    ...shouldRender ? {} : { visibility: "hidden" }
+  };
+  return /* @__PURE__ */ jsxRuntime.jsx("div", { className, style: combinedStyle, children });
+}
+function useScrollProgress(ref) {
+  const [state, setState] = react.useState({
+    progress: 0,
+    isInView: false
+  });
+  const rafRef = react.useRef(null);
+  react.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    function update() {
+      const rect = el.getBoundingClientRect();
+      const scrollableHeight = el.offsetHeight - window.innerHeight;
+      const isInView = rect.bottom > 0 && rect.top < window.innerHeight;
+      let progress = 0;
+      if (scrollableHeight > 0) {
+        progress = clamp(-rect.top / scrollableHeight, 0, 1);
+      }
+      setState((prev) => {
+        if (prev.progress === progress && prev.isInView === isInView) return prev;
+        return { progress, isInView };
+      });
+    }
+    function handleScroll() {
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        update();
+      });
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    update();
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, [ref]);
+  return state;
+}
+function useImagePreloader(urls) {
+  const [state, setState] = react.useState({
+    images: [],
+    progress: 0,
+    isLoaded: false
+  });
+  react.useRef([]);
+  const urlsKey = urls.join("\0");
+  react.useEffect(() => {
+    let cancelled = false;
+    setState({ images: [], progress: 0, isLoaded: false });
+    preloadImages(urls, (progress) => {
+      if (cancelled) return;
+      setState((prev) => ({
+        ...prev,
+        progress: progress.percent
+      }));
+    }).then((images) => {
+      if (cancelled) return;
+      setState({ images, progress: 100, isLoaded: true });
+    }).catch(() => {
+      if (cancelled) return;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [urlsKey]);
+  return state;
+}
+
+exports.Animate = Animate;
+exports.FrameRenderer = FrameRenderer;
+exports.Overlay = Overlay;
+exports.Scene = Scene;
+exports.ScrollEngine = ScrollEngine;
+exports.ScrollSequence = ScrollSequence;
+exports.easings = easings;
+exports.generateImageUrls = generateImageUrls;
+exports.preloadImages = preloadImages;
+exports.resolveEasing = resolveEasing;
+exports.useImagePreloader = useImagePreloader;
+exports.useSceneProgress = useSceneProgress;
+exports.useScrollProgress = useScrollProgress;
+//# sourceMappingURL=index.cjs.map
+//# sourceMappingURL=index.cjs.map
