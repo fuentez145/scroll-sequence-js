@@ -46,8 +46,16 @@
     "scroll-animation",
     "scroll-sequence"
   ],
-  "author": "",
+  "author": "fuentez145",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fuentez145/scroll-sequence-js.git"
+  },
+  "homepage": "https://github.com/fuentez145/scroll-sequence-js#readme",
+  "bugs": {
+    "url": "https://github.com/fuentez145/scroll-sequence-js/issues"
+  },
   "peerDependencies": {
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0"
