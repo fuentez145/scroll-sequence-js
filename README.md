@@ -233,6 +233,25 @@ Chain scenes for different animation segments. Each gets its own images and dura
 - **Aspect ratio:** Use nearly square ratios if targeting both mobile and desktop
 - **Overlap:** Use `overlapTop` to tuck the sequence behind a hero section; pair with `exitFadeLength` for smooth transitions out
 
+## Releasing
+
+Releases are published to npm by GitHub Actions when a semver tag is pushed.
+
+1. Update `version` in `package.json` and commit the change.
+2. Push the commit to `main`.
+3. Create and push a matching tag, for example:
+
+   ```shell
+   git tag v0.1.1
+   git push origin v0.1.1
+   ```
+
+The release workflow type-checks and builds the package, verifies that the tag
+matches `package.json`, publishes with npm provenance, and creates a GitHub
+Release. Configure the repository secret `NPM_TOKEN` before the first release.
+A granular npm automation token limited to this package is recommended. The
+workflow also requests GitHub's OIDC token so npm can attach provenance.
+
 ## License
 
 MIT

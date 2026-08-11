@@ -53,6 +53,13 @@
     "url": "https://github.com/fuentez145/scroll-sequence-js.git"
   },
   "homepage": "https://github.com/fuentez145/scroll-sequence-js#readme",
+  "publishConfig": {
+      "access": "public"
+  },
+  "engines": {
+      "node": ">=18"
+  },
+  "sideEffects": false,
   "bugs": {
     "url": "https://github.com/fuentez145/scroll-sequence-js/issues"
   },
