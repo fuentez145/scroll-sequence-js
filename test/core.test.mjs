@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FrameRenderer, generateImageUrls, preloadImages } from "../dist/core.js";
+import { FrameRenderer, generateImageUrls, normalizeDuration, preloadImages } from "../dist/core.js";
 
 test("generateImageUrls creates ordered padded frame URLs", () => {
   assert.deepEqual(
@@ -29,6 +29,35 @@ test("preloadImages waits for decode before resolving", async () => {
   assert.deepEqual(decodeCalls.sort(), ["a.webp", "b.webp"]);
   assert.equal(progress.at(-1).loaded, 2);
   assert.equal(progress.at(-1).percent, 100);
+});
+
+test("preloadImages reports each decoded image and its original index", async () => {
+  globalThis.Image = class {
+    set src(value) {
+      this.url = value;
+      queueMicrotask(() => this.onload?.());
+    }
+    decode() {
+      return Promise.resolve();
+    }
+  };
+
+  const loaded = [];
+  await preloadImages(["a.webp", "b.webp"], (progress, image, index) => {
+    if (image) loaded.push({ url: image.url, index, count: progress.loaded });
+  });
+
+  assert.deepEqual(loaded.map(({ url }) => url).sort(), ["a.webp", "b.webp"]);
+  assert.deepEqual(loaded.map(({ index }) => index).sort(), [0, 1]);
+});
+
+test("normalizeDuration provides a finite positive fallback", () => {
+  assert.equal(normalizeDuration(undefined), 1);
+  assert.equal(normalizeDuration(0), 1);
+  assert.equal(normalizeDuration(-1), 1);
+  assert.equal(normalizeDuration(Number.NaN), 1);
+  assert.equal(normalizeDuration(Number.POSITIVE_INFINITY), 1);
+  assert.equal(normalizeDuration(2.5), 2.5);
 });
 
 test("preloadImages reports empty sequences as complete", async () => {

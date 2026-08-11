@@ -102,7 +102,7 @@ interface PreloadProgress {
     total: number;
     percent: number;
 }
-type PreloadProgressCallback = (progress: PreloadProgress) => void;
+type PreloadProgressCallback = (progress: PreloadProgress, image?: HTMLImageElement, index?: number) => void;
 declare function preloadImages(urls: string[], onProgress?: PreloadProgressCallback): Promise<HTMLImageElement[]>;
 declare function generateImageUrls(pattern: string, count: number, startIndex?: number, padLength?: number): string[];
 
@@ -110,6 +110,7 @@ declare const easings: Record<EasingName, EasingFunction>;
 declare function resolveEasing(easing: EasingName | EasingFunction | undefined): EasingFunction;
 declare function lerp(a: number, b: number, t: number): number;
 declare function clamp(value: number, min: number, max: number): number;
+declare function normalizeDuration(duration: number | undefined): number;
 declare function inverseLerp(a: number, b: number, value: number): number;
 
-export { type AnimationType as A, type EasingName as E, FrameRenderer as F, type HorizontalAlignment as H, type Position as P, type RenderOptions as R, type ScaleMode as S, type VerticalAlignment as V, type EasingFunction as a, type EngineConfig as b, type PreloadProgress as c, type PreloadProgressCallback as d, type SceneConfig as e, type SceneState as f, ScrollEngine as g, easings as h, generateImageUrls as i, clamp as j, inverseLerp as k, lerp as l, preloadImages as p, resolveEasing as r };
+export { type AnimationType as A, type EasingName as E, FrameRenderer as F, type HorizontalAlignment as H, type Position as P, type RenderOptions as R, type ScaleMode as S, type VerticalAlignment as V, type EasingFunction as a, type EngineConfig as b, type PreloadProgress as c, type PreloadProgressCallback as d, type SceneConfig as e, type SceneState as f, ScrollEngine as g, easings as h, generateImageUrls as i, clamp as j, inverseLerp as k, lerp as l, normalizeDuration as n, preloadImages as p, resolveEasing as r };

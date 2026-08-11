@@ -1,7 +1,7 @@
 import type { EngineConfig, SceneConfig, SceneState } from "../types";
 import { FrameRenderer } from "./FrameRenderer";
 import { preloadImages } from "./ImagePreloader";
-import { clamp } from "./math";
+import { clamp, normalizeDuration } from "./math";
 
 export class ScrollEngine {
   private renderer: FrameRenderer;
@@ -71,14 +71,11 @@ export class ScrollEngine {
     let cumulativeProgress = 0;
     const sceneStates: SceneState[] = sceneMeta.map((meta) => {
       const duration = meta.config.duration;
-      const safeDuration =
-        typeof duration === "number" && Number.isFinite(duration) && duration > 0
-          ? duration
-          : 1;
+      const safeDuration = normalizeDuration(duration);
       const weight = safeDuration * meta.count;
       return {
         config: meta.config,
-        images: [],
+        images: new Array(meta.count),
         startProgress: 0,
         endProgress: 0,
         frameCount: meta.count,
@@ -110,15 +107,27 @@ export class ScrollEngine {
     const totalImages = allUrls.length;
     const preloadThreshold = (this.preloadPercentage / 100) * totalImages;
 
-    const allImages = await preloadImages(allUrls, (progress) => {
+    const allImages = await preloadImages(allUrls, (progress, image, imageIndex) => {
       if (this.destroyed) return;
       loadedSoFar = progress.loaded;
       onPreloadProgress?.(progress.loaded, progress.total);
+
+      if (image && imageIndex !== undefined) {
+        for (let sceneIndex = 0; sceneIndex < sceneMeta.length; sceneIndex++) {
+          const meta = sceneMeta[sceneIndex];
+          if (imageIndex >= meta.startIdx && imageIndex < meta.startIdx + meta.count) {
+            this.scenes[sceneIndex].images[imageIndex - meta.startIdx] = image;
+            break;
+          }
+        }
+      }
 
       if (!this.isReady && loadedSoFar >= preloadThreshold) {
         this.isReady = true;
         this.start();
       }
+
+      if (this.isReady) this.drawCurrentFrame();
     });
 
     if (this.destroyed) return;
@@ -278,7 +287,15 @@ export class ScrollEngine {
     const scene = this.scenes[sceneIndex];
     if (!scene || scene.images.length === 0) return;
 
-    const image = scene.images[clamp(frameIndex, 0, scene.images.length - 1)];
+    const requestedIndex = clamp(frameIndex, 0, scene.images.length - 1);
+    let image = scene.images[requestedIndex];
+    if (!image) {
+      for (let offset = 1; offset < scene.images.length && !image; offset++) {
+        image = scene.images[requestedIndex - offset] ?? scene.images[requestedIndex + offset];
+      }
+    }
+    if (!image) return;
+
     this.renderer.drawFrame(image, {
       scaleMode: scene.config.scaleMode ?? "fill",
       horizontalAlignment: scene.config.horizontalAlignment ?? "center",

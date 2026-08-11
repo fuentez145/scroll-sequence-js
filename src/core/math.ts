@@ -22,6 +22,12 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+export function normalizeDuration(duration: number | undefined): number {
+  return typeof duration === "number" && Number.isFinite(duration) && duration > 0
+    ? duration
+    : 1;
+}
+
 export function inverseLerp(a: number, b: number, value: number): number {
   if (a === b) return 0;
   return clamp((value - a) / (b - a), 0, 1);

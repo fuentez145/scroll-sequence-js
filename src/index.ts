@@ -13,7 +13,7 @@ export { useSceneProgress } from "./components/context";
 export { ScrollEngine } from "./core/ScrollEngine";
 export { FrameRenderer } from "./core/FrameRenderer";
 export { preloadImages, generateImageUrls } from "./core/ImagePreloader";
-export { easings, resolveEasing } from "./core/math";
+export { easings, resolveEasing, normalizeDuration } from "./core/math";
 
 // Types
 export type {

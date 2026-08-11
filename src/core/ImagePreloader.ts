@@ -6,7 +6,11 @@ export interface PreloadProgress {
   percent: number;
 }
 
-export type PreloadProgressCallback = (progress: PreloadProgress) => void;
+export type PreloadProgressCallback = (
+  progress: PreloadProgress,
+  image?: HTMLImageElement,
+  index?: number
+) => void;
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -43,12 +47,12 @@ export async function preloadImages(
   let loaded = 0;
   let nextIndex = 0;
 
-  function reportProgress() {
+  function reportProgress(image?: HTMLImageElement, index?: number) {
     onProgress?.({
       loaded,
       total,
       percent: total > 0 ? (loaded / total) * 100 : 0,
-    });
+    }, image, index);
   }
 
   return new Promise((resolve, reject) => {
@@ -67,7 +71,7 @@ export async function preloadImages(
           if (hasRejected) return;
           results[index] = img;
           loaded++;
-          reportProgress();
+          reportProgress(img, index);
           processNext();
         })
         .catch((err) => {

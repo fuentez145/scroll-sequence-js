@@ -8,6 +8,7 @@ import {
   type CSSProperties,
 } from "react";
 import { ScrollEngine } from "../core/ScrollEngine";
+import { normalizeDuration } from "../core/math";
 import type { SceneConfig, Position } from "../types";
 import { SequenceContext, SceneProgressContext, type SceneProgressContextValue } from "./context";
 
@@ -195,7 +196,7 @@ export function ScrollSequence({
   const totalHeight = useMemo(() => {
     const scenes = Array.from(scenesMapRef.current.values());
     const totalFrames = scenes.reduce(
-      (sum, s) => sum + s.config.images.length * (s.config.duration ?? 1),
+      (sum, s) => sum + s.config.images.length * normalizeDuration(s.config.duration),
       0
     );
     // Use consistent fallback for SSR and first client render to avoid hydration mismatch.

@@ -1,1 +1,1 @@
-export { F as FrameRenderer, c as PreloadProgress, d as PreloadProgressCallback, R as RenderOptions, g as ScrollEngine, j as clamp, h as easings, i as generateImageUrls, k as inverseLerp, l as lerp, p as preloadImages, r as resolveEasing } from './index-Bb83fJdh.js';
+export { F as FrameRenderer, c as PreloadProgress, d as PreloadProgressCallback, R as RenderOptions, g as ScrollEngine, j as clamp, h as easings, i as generateImageUrls, k as inverseLerp, l as lerp, n as normalizeDuration, p as preloadImages, r as resolveEasing } from './index-CKcchiZu.js';

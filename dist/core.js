@@ -130,12 +130,12 @@ async function preloadImages(urls, onProgress) {
   const results = new Array(total);
   let loaded = 0;
   let nextIndex = 0;
-  function reportProgress() {
+  function reportProgress(image, index) {
     onProgress?.({
       loaded,
       total,
       percent: total > 0 ? loaded / total * 100 : 0
-    });
+    }, image, index);
   }
   return new Promise((resolve, reject) => {
     let hasRejected = false;
@@ -150,7 +150,7 @@ async function preloadImages(urls, onProgress) {
         if (hasRejected) return;
         results[index] = img;
         loaded++;
-        reportProgress();
+        reportProgress(img, index);
         processNext();
       }).catch((err) => {
         if (hasRejected) return;
@@ -189,6 +189,9 @@ function lerp(a, b, t) {
 }
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+function normalizeDuration(duration) {
+  return typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : 1;
 }
 function inverseLerp(a, b, value) {
   if (a === b) return 0;
@@ -241,11 +244,11 @@ var ScrollEngine = class {
     let cumulativeProgress = 0;
     const sceneStates = sceneMeta.map((meta) => {
       const duration = meta.config.duration;
-      const safeDuration = typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : 1;
+      const safeDuration = normalizeDuration(duration);
       const weight = safeDuration * meta.count;
       return {
         config: meta.config,
-        images: [],
+        images: new Array(meta.count),
         startProgress: 0,
         endProgress: 0,
         frameCount: meta.count,
@@ -269,14 +272,24 @@ var ScrollEngine = class {
     let loadedSoFar = 0;
     const totalImages = allUrls.length;
     const preloadThreshold = this.preloadPercentage / 100 * totalImages;
-    const allImages = await preloadImages(allUrls, (progress) => {
+    const allImages = await preloadImages(allUrls, (progress, image, imageIndex) => {
       if (this.destroyed) return;
       loadedSoFar = progress.loaded;
       onPreloadProgress?.(progress.loaded, progress.total);
+      if (image && imageIndex !== void 0) {
+        for (let sceneIndex = 0; sceneIndex < sceneMeta.length; sceneIndex++) {
+          const meta = sceneMeta[sceneIndex];
+          if (imageIndex >= meta.startIdx && imageIndex < meta.startIdx + meta.count) {
+            this.scenes[sceneIndex].images[imageIndex - meta.startIdx] = image;
+            break;
+          }
+        }
+      }
       if (!this.isReady && loadedSoFar >= preloadThreshold) {
         this.isReady = true;
         this.start();
       }
+      if (this.isReady) this.drawCurrentFrame();
     });
     if (this.destroyed) return;
     for (let i = 0; i < sceneMeta.length; i++) {
@@ -389,7 +402,14 @@ var ScrollEngine = class {
     const { sceneIndex, frameIndex, sceneProgress } = this.resolveFrame(this.currentProgress);
     const scene = this.scenes[sceneIndex];
     if (!scene || scene.images.length === 0) return;
-    const image = scene.images[clamp(frameIndex, 0, scene.images.length - 1)];
+    const requestedIndex = clamp(frameIndex, 0, scene.images.length - 1);
+    let image = scene.images[requestedIndex];
+    if (!image) {
+      for (let offset = 1; offset < scene.images.length && !image; offset++) {
+        image = scene.images[requestedIndex - offset] ?? scene.images[requestedIndex + offset];
+      }
+    }
+    if (!image) return;
     this.renderer.drawFrame(image, {
       scaleMode: scene.config.scaleMode ?? "fill",
       horizontalAlignment: scene.config.horizontalAlignment ?? "center",
@@ -440,6 +460,6 @@ var ScrollEngine = class {
   }
 };
 
-export { FrameRenderer, ScrollEngine, clamp, easings, generateImageUrls, inverseLerp, lerp, preloadImages, resolveEasing };
+export { FrameRenderer, ScrollEngine, clamp, easings, generateImageUrls, inverseLerp, lerp, normalizeDuration, preloadImages, resolveEasing };
 //# sourceMappingURL=core.js.map
 //# sourceMappingURL=core.js.map
