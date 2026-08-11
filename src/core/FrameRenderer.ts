@@ -63,6 +63,19 @@ export class FrameRenderer {
     const displayWidth = this.canvas.width / dpr;
     const displayHeight = this.canvas.height / dpr;
 
+    // Avoid NaN/Infinity canvas operations while an image is still decoding or
+    // while the container is temporarily collapsed during layout changes.
+    if (
+      image.naturalWidth <= 0 ||
+      image.naturalHeight <= 0 ||
+      !Number.isFinite(displayWidth) ||
+      !Number.isFinite(displayHeight) ||
+      displayWidth <= 0 ||
+      displayHeight <= 0
+    ) {
+      return;
+    }
+
     this.ctx.clearRect(0, 0, displayWidth, displayHeight);
 
     const imgAspect = image.naturalWidth / image.naturalHeight;
@@ -128,5 +141,8 @@ export class FrameRenderer {
     const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
     this.ctx.clearRect(0, 0, this.canvas.width / dpr, this.canvas.height / dpr);
     this.lastDrawnImage = null;
+    this.lastWidth = 0;
+    this.lastHeight = 0;
+    this.lastOptions = DEFAULT_OPTIONS;
   }
 }

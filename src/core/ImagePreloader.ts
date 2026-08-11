@@ -12,7 +12,18 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.decoding = "async";
-    img.onload = () => resolve(img);
+    img.onload = async () => {
+      // Decode before handing the frame to canvas. Otherwise the first draw can
+      // synchronously decode a large image during a scroll event.
+      if (typeof img.decode === "function") {
+        try {
+          await img.decode();
+        } catch {
+          // Some browsers reject decode() after onload; the image is still usable.
+        }
+      }
+      resolve(img);
+    };
     img.onerror = () => reject(new Error(`Failed to load image: ${src}`));
     img.src = src;
   });
@@ -23,7 +34,10 @@ export async function preloadImages(
   onProgress?: PreloadProgressCallback
 ): Promise<HTMLImageElement[]> {
   const total = urls.length;
-  if (total === 0) return [];
+  if (total === 0) {
+    onProgress?.({ loaded: 0, total: 0, percent: 100 });
+    return [];
+  }
 
   const results: HTMLImageElement[] = new Array(total);
   let loaded = 0;

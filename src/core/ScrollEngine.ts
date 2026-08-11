@@ -18,6 +18,8 @@ export class ScrollEngine {
   private isReady = false;
   private observer: IntersectionObserver | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private isVisible = true;
+  private destroyed = false;
   private preloadPercentage: number;
   private scrollPadding: number;
   private reverseSpeedMultiplier: number;
@@ -49,6 +51,7 @@ export class ScrollEngine {
     sceneConfigs: SceneConfig[],
     onPreloadProgress?: (loaded: number, total: number) => void
   ): Promise<void> {
+    if (this.destroyed) return;
     // Gather all image URLs
     const allUrls: string[] = [];
     const sceneMeta: { config: SceneConfig; startIdx: number; count: number }[] = [];
@@ -67,7 +70,12 @@ export class ScrollEngine {
     // Calculate progress slices
     let cumulativeProgress = 0;
     const sceneStates: SceneState[] = sceneMeta.map((meta) => {
-      const weight = (meta.config.duration ?? 1) * meta.count;
+      const duration = meta.config.duration;
+      const safeDuration =
+        typeof duration === "number" && Number.isFinite(duration) && duration > 0
+          ? duration
+          : 1;
+      const weight = safeDuration * meta.count;
       return {
         config: meta.config,
         images: [],
@@ -103,6 +111,7 @@ export class ScrollEngine {
     const preloadThreshold = (this.preloadPercentage / 100) * totalImages;
 
     const allImages = await preloadImages(allUrls, (progress) => {
+      if (this.destroyed) return;
       loadedSoFar = progress.loaded;
       onPreloadProgress?.(progress.loaded, progress.total);
 
@@ -111,6 +120,8 @@ export class ScrollEngine {
         this.start();
       }
     });
+
+    if (this.destroyed) return;
 
     // Assign images to scenes
     for (let i = 0; i < sceneMeta.length; i++) {
@@ -127,13 +138,14 @@ export class ScrollEngine {
   }
 
   private start(): void {
-    if (this.isActive) return;
+    if (this.destroyed || this.isActive) return;
     this.isActive = true;
 
     // Intersection observer for activation
     this.observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
+          this.isVisible = entry.isIntersecting;
           if (entry.isIntersecting) {
             this.startAnimationLoop();
           } else {
@@ -159,7 +171,7 @@ export class ScrollEngine {
   }
 
   private handleScroll(): void {
-    if (!this.isReady) return;
+    if (this.destroyed || !this.isReady) return;
 
     const rect = this.container.getBoundingClientRect();
     const scrollableHeight = this.container.offsetHeight - window.innerHeight;
@@ -181,7 +193,7 @@ export class ScrollEngine {
     }
 
     // Ensure animation loop is running
-    if (this.rafId === null) {
+    if (this.isVisible && this.rafId === null) {
       this.startAnimationLoop();
     }
   }
@@ -194,7 +206,7 @@ export class ScrollEngine {
   }
 
   private startAnimationLoop(): void {
-    if (this.rafId !== null) return;
+    if (this.destroyed || !this.isVisible || this.rafId !== null) return;
     this.lastTickTime = performance.now();
     this.rafId = requestAnimationFrame(this.tick);
   }
@@ -205,13 +217,17 @@ export class ScrollEngine {
       this.rafId = null;
     }
     // Draw the final frame at target progress before stopping
-    if (this.isReady) {
+    if (!this.destroyed && this.isReady) {
       this.currentProgress = this.targetProgress;
       this.drawCurrentFrame();
     }
   }
 
   private tick(): void {
+    if (this.destroyed || !this.isVisible) {
+      this.rafId = null;
+      return;
+    }
     this.rafId = null;
     const now = performance.now();
     const dt = Math.min((now - this.lastTickTime) / 1000, 0.1); // delta in seconds, cap at 100ms
@@ -249,7 +265,7 @@ export class ScrollEngine {
       this.scrollDelay > 0 &&
       Math.abs(this.currentProgress - this.targetProgress) > 0.001;
 
-    if (needsCatchUp) {
+    if (needsCatchUp && this.isVisible && !this.destroyed) {
       this.rafId = requestAnimationFrame(this.tick);
     }
   }
@@ -277,6 +293,10 @@ export class ScrollEngine {
     frameIndex: number;
     sceneProgress: number;
   } {
+    if (this.scenes.length === 0) {
+      return { sceneIndex: -1, frameIndex: -1, sceneProgress: 0 };
+    }
+
     const p = clamp(progress, 0, 1);
 
     for (let i = 0; i < this.scenes.length; i++) {
@@ -308,11 +328,17 @@ export class ScrollEngine {
   }
 
   destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
     this.isActive = false;
+    this.isVisible = false;
     this.stopAnimationLoop();
     window.removeEventListener("scroll", this.handleScroll);
     this.observer?.disconnect();
     this.resizeObserver?.disconnect();
+    this.observer = null;
+    this.resizeObserver = null;
+    this.scenes = [];
     this.renderer.clear();
   }
 }

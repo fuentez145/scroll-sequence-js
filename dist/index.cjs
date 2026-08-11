@@ -44,6 +44,9 @@ var FrameRenderer = class {
     const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
     const displayWidth = this.canvas.width / dpr;
     const displayHeight = this.canvas.height / dpr;
+    if (image.naturalWidth <= 0 || image.naturalHeight <= 0 || !Number.isFinite(displayWidth) || !Number.isFinite(displayHeight) || displayWidth <= 0 || displayHeight <= 0) {
+      return;
+    }
     this.ctx.clearRect(0, 0, displayWidth, displayHeight);
     const imgAspect = image.naturalWidth / image.naturalHeight;
     const canvasAspect = displayWidth / displayHeight;
@@ -100,6 +103,9 @@ var FrameRenderer = class {
     const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
     this.ctx.clearRect(0, 0, this.canvas.width / dpr, this.canvas.height / dpr);
     this.lastDrawnImage = null;
+    this.lastWidth = 0;
+    this.lastHeight = 0;
+    this.lastOptions = DEFAULT_OPTIONS;
   }
 };
 
@@ -109,14 +115,25 @@ function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.decoding = "async";
-    img.onload = () => resolve(img);
+    img.onload = async () => {
+      if (typeof img.decode === "function") {
+        try {
+          await img.decode();
+        } catch {
+        }
+      }
+      resolve(img);
+    };
     img.onerror = () => reject(new Error(`Failed to load image: ${src}`));
     img.src = src;
   });
 }
 async function preloadImages(urls, onProgress) {
   const total = urls.length;
-  if (total === 0) return [];
+  if (total === 0) {
+    onProgress?.({ loaded: 0, total: 0, percent: 100 });
+    return [];
+  }
   const results = new Array(total);
   let loaded = 0;
   let nextIndex = 0;
@@ -193,6 +210,8 @@ var ScrollEngine = class {
     this.isReady = false;
     this.observer = null;
     this.resizeObserver = null;
+    this.isVisible = true;
+    this.destroyed = false;
     this.lastTickTime = 0;
     this.totalFrameCount = 0;
     this.canvas = config.canvas;
@@ -211,6 +230,7 @@ var ScrollEngine = class {
     this.initScenes(config.scenes, config.onPreloadProgress);
   }
   async initScenes(sceneConfigs, onPreloadProgress) {
+    if (this.destroyed) return;
     const allUrls = [];
     const sceneMeta = [];
     for (const config of sceneConfigs) {
@@ -224,7 +244,9 @@ var ScrollEngine = class {
     this.totalFrameCount = allUrls.length;
     let cumulativeProgress = 0;
     const sceneStates = sceneMeta.map((meta) => {
-      const weight = (meta.config.duration ?? 1) * meta.count;
+      const duration = meta.config.duration;
+      const safeDuration = typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : 1;
+      const weight = safeDuration * meta.count;
       return {
         config: meta.config,
         images: [],
@@ -252,6 +274,7 @@ var ScrollEngine = class {
     const totalImages = allUrls.length;
     const preloadThreshold = this.preloadPercentage / 100 * totalImages;
     const allImages = await preloadImages(allUrls, (progress) => {
+      if (this.destroyed) return;
       loadedSoFar = progress.loaded;
       onPreloadProgress?.(progress.loaded, progress.total);
       if (!this.isReady && loadedSoFar >= preloadThreshold) {
@@ -259,6 +282,7 @@ var ScrollEngine = class {
         this.start();
       }
     });
+    if (this.destroyed) return;
     for (let i = 0; i < sceneMeta.length; i++) {
       const meta = sceneMeta[i];
       this.scenes[i].images = allImages.slice(
@@ -271,11 +295,12 @@ var ScrollEngine = class {
     this.drawCurrentFrame();
   }
   start() {
-    if (this.isActive) return;
+    if (this.destroyed || this.isActive) return;
     this.isActive = true;
     this.observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
+          this.isVisible = entry.isIntersecting;
           if (entry.isIntersecting) {
             this.startAnimationLoop();
           } else {
@@ -294,7 +319,7 @@ var ScrollEngine = class {
     this.currentProgress = this.targetProgress;
   }
   handleScroll() {
-    if (!this.isReady) return;
+    if (this.destroyed || !this.isReady) return;
     const rect = this.container.getBoundingClientRect();
     const scrollableHeight = this.container.offsetHeight - window.innerHeight;
     const frameScrollHeight = scrollableHeight - this.scrollPadding;
@@ -307,7 +332,7 @@ var ScrollEngine = class {
     if (this.scrollDelay === 0) {
       this.currentProgress = this.targetProgress;
     }
-    if (this.rafId === null) {
+    if (this.isVisible && this.rafId === null) {
       this.startAnimationLoop();
     }
   }
@@ -318,7 +343,7 @@ var ScrollEngine = class {
     this.drawCurrentFrame();
   }
   startAnimationLoop() {
-    if (this.rafId !== null) return;
+    if (this.destroyed || !this.isVisible || this.rafId !== null) return;
     this.lastTickTime = performance.now();
     this.rafId = requestAnimationFrame(this.tick);
   }
@@ -327,12 +352,16 @@ var ScrollEngine = class {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
-    if (this.isReady) {
+    if (!this.destroyed && this.isReady) {
       this.currentProgress = this.targetProgress;
       this.drawCurrentFrame();
     }
   }
   tick() {
+    if (this.destroyed || !this.isVisible) {
+      this.rafId = null;
+      return;
+    }
     this.rafId = null;
     const now = performance.now();
     const dt = Math.min((now - this.lastTickTime) / 1e3, 0.1);
@@ -355,7 +384,7 @@ var ScrollEngine = class {
     }
     this.drawCurrentFrame();
     const needsCatchUp = this.scrollDelay > 0 && Math.abs(this.currentProgress - this.targetProgress) > 1e-3;
-    if (needsCatchUp) {
+    if (needsCatchUp && this.isVisible && !this.destroyed) {
       this.rafId = requestAnimationFrame(this.tick);
     }
   }
@@ -373,6 +402,9 @@ var ScrollEngine = class {
     this.onProgress?.(this.currentProgress, sceneIndex, sceneProgress);
   }
   resolveFrame(progress) {
+    if (this.scenes.length === 0) {
+      return { sceneIndex: -1, frameIndex: -1, sceneProgress: 0 };
+    }
     const p = clamp(progress, 0, 1);
     for (let i = 0; i < this.scenes.length; i++) {
       const scene = this.scenes[i];
@@ -397,11 +429,17 @@ var ScrollEngine = class {
     return this.scenes;
   }
   destroy() {
+    if (this.destroyed) return;
+    this.destroyed = true;
     this.isActive = false;
+    this.isVisible = false;
     this.stopAnimationLoop();
     window.removeEventListener("scroll", this.handleScroll);
     this.observer?.disconnect();
     this.resizeObserver?.disconnect();
+    this.observer = null;
+    this.resizeObserver = null;
+    this.scenes = [];
     this.renderer.clear();
   }
 };
@@ -496,7 +534,7 @@ function ScrollSequence({
       }
     });
     engineRef.current = engine;
-  }, [scrollDelay, preloadPercentage, reverseSpeedMultiplier, stopDeceleration]);
+  }, [scrollDelay, preloadPercentage, reverseSpeedMultiplier, stopDeceleration, overlapTop]);
   const [sceneVersion, setSceneVersion] = react.useState(0);
   const sequenceCtx = react.useMemo(
     () => ({

@@ -138,7 +138,7 @@ export function ScrollSequence({
     });
 
     engineRef.current = engine;
-  }, [scrollDelay, preloadPercentage, reverseSpeedMultiplier, stopDeceleration]);
+  }, [scrollDelay, preloadPercentage, reverseSpeedMultiplier, stopDeceleration, overlapTop]);
 
   // Rebuild engine when scenes change
   const [sceneVersion, setSceneVersion] = useState(0);

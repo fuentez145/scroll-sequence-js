@@ -1,6 +1,6 @@
 {
   "name": "scroll-sequence-js",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Scroll-driven image sequence animation component for React. Canvas-based rendering with scenes, HTML overlays, and scroll-synced animations.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -35,7 +35,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs"
   },
   "keywords": [
     "scroll",
@@ -54,10 +55,10 @@
   },
   "homepage": "https://github.com/fuentez145/scroll-sequence-js#readme",
   "publishConfig": {
-      "access": "public"
+    "access": "public"
   },
   "engines": {
-      "node": ">=18"
+    "node": ">=18"
   },
   "sideEffects": false,
   "bugs": {

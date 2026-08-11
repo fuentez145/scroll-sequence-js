@@ -51,6 +51,8 @@ declare class ScrollEngine {
     private isReady;
     private observer;
     private resizeObserver;
+    private isVisible;
+    private destroyed;
     private preloadPercentage;
     private scrollPadding;
     private reverseSpeedMultiplier;
