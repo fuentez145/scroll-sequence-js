@@ -1,4 +1,4 @@
-import * as react_jsx_runtime from 'react/jsx-runtime';
+import * as react from 'react';
 import { ReactNode, CSSProperties, RefObject } from 'react';
 import { P as Position, S as ScaleMode, H as HorizontalAlignment, V as VerticalAlignment, A as AnimationType, E as EasingName, a as EasingFunction } from './index-CKcchiZu.js';
 export { b as EngineConfig, F as FrameRenderer, c as PreloadProgress, d as PreloadProgressCallback, R as RenderOptions, e as SceneConfig, f as SceneState, g as ScrollEngine, h as easings, i as generateImageUrls, n as normalizeDuration, p as preloadImages, r as resolveEasing } from './index-CKcchiZu.js';
@@ -30,7 +30,7 @@ interface ScrollSequenceProps {
     exitFadeLength?: number;
     onProgress?: (progress: number, sceneIndex: number, sceneProgress: number) => void;
 }
-declare function ScrollSequence({ children, className, style, scrollDelay, position, preloadPercentage, waitForLoad, renderLoader, lazy, scrollPerFrame, overlapTop, overlapBottom, reverseSpeedMultiplier, stopDeceleration, exitFadeLength, onProgress, }: ScrollSequenceProps): react_jsx_runtime.JSX.Element;
+declare function ScrollSequence({ children, className, style, scrollDelay, position, preloadPercentage, waitForLoad, renderLoader, lazy, scrollPerFrame, overlapTop, overlapBottom, reverseSpeedMultiplier, stopDeceleration, exitFadeLength, onProgress, }: ScrollSequenceProps): react.JSX.Element;
 
 interface SceneProps {
     images: string[];
@@ -40,14 +40,14 @@ interface SceneProps {
     verticalAlignment?: VerticalAlignment;
     children?: ReactNode;
 }
-declare function Scene({ images, duration, scaleMode, horizontalAlignment, verticalAlignment, children, }: SceneProps): react_jsx_runtime.JSX.Element;
+declare function Scene({ images, duration, scaleMode, horizontalAlignment, verticalAlignment, children, }: SceneProps): react.JSX.Element;
 
 interface OverlayProps {
     children: ReactNode;
     className?: string;
     style?: CSSProperties;
 }
-declare function Overlay({ children, className, style }: OverlayProps): react_jsx_runtime.JSX.Element;
+declare function Overlay({ children, className, style }: OverlayProps): react.JSX.Element;
 
 interface AnimateProps {
     children: ReactNode;
@@ -59,7 +59,7 @@ interface AnimateProps {
     className?: string;
     style?: CSSProperties;
 }
-declare function Animate({ children, type, start, end, distance, easing, className, style, }: AnimateProps): react_jsx_runtime.JSX.Element;
+declare function Animate({ children, type, start, end, distance, easing, className, style, }: AnimateProps): react.JSX.Element;
 
 interface ScrollProgressResult {
     progress: number;

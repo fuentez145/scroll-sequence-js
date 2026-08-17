@@ -1,6 +1,6 @@
 {
   "name": "scroll-sequence-js",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Scroll-driven image sequence animation component for React. Canvas-based rendering with scenes, HTML overlays, and scroll-synced animations.",
   "type": "module",
   "main": "./dist/index.cjs",
